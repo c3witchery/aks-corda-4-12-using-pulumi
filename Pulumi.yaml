@@ -1,0 +1,7 @@
+name: aks-corda-4-12-using-pulumi
+runtime: go
+description: AKS deployment of Corda Nodes (assuming a separate CENM installation is present)
+config:
+  pulumi:tags:
+    value:
+      pulumi:template: azure-go
