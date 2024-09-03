@@ -1,0 +1,121 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: networkservices
+  namespace: corda
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      run: networkservices
+  template:
+    metadata:
+      labels:
+        run: networkservices
+    spec:
+      containers:
+      - args:
+        - --minimumPlatformVersion=4
+        command:
+        - /start.sh
+        image: us-central1-docker.pkg.dev/r3-ps-test-01/private-docker-repo/corda/corda-enterprise:4.12-zulu-openjdk-alpine
+        imagePullPolicy: IfNotPresent
+        name: networkservices
+        ports:
+        - containerPort: 8080
+          name: networkmapport
+        resources:
+          requests:
+            memory: 1Gi
+            cpu: 500m
+          limits:
+            memory: 1Gi
+            cpu: 500m
+        volumeMounts:
+        - mountPath: /opt/node-storage
+          name: nms-persistence-storage
+      imagePullSecrets:
+      - name: artifactory-secret
+      volumes:
+      - name: nms-persistence-storage
+        persistentVolumeClaim:
+          claimName: nms-persistence-pvc
+---
+apiVersion: v1
+kind: Service
+metadata:
+  labels:
+    run: networkservices
+  name: networkservices
+  namespace: corda
+spec:
+  ports:
+  - name: networkmapport
+    port: 8080
+    protocol: TCP
+  selector:
+    run: networkservices
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: nms-persistence-pvc
+  namespace: corda
+spec:
+  accessModes:
+  - ReadWriteOnce
+  resources:
+    requests:
+      storage: 1Gi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: notary
+  namespace: corda
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      run: notary
+  template:
+    metadata:
+      labels:
+        run: notary
+    spec:
+     containers:
+      - env:
+        - name: PUBLIC_ADDRESS
+          value: notary
+        - name: NETWORK_SERVICES_URL
+          value: http://networkservices:8080
+        image: us-central1-docker.pkg.dev/r3-ps-test-01/private-docker-repo/corda/corda-enterprise:4.12-zulu-openjdk-alpine
+        imagePullPolicy: IfNotPresent
+        name: notary
+        ports:
+        - containerPort: 10200
+          name: notaryport
+        resources:
+          requests:
+            memory: 1Gi
+            cpu: 500m
+          limits:
+            memory: 1Gi
+            cpu: 500m 
+    imagePullSecrets:
+      - name: artifactory-secret
+---
+apiVersion: v1
+kind: Service
+metadata:
+  labels:
+    run: notary
+  name: notary
+  namespace: corda
+spec:
+  ports:
+  - name: notaryport
+    port: 10200
+    protocol: TCP
+  selector:
+    run: notary

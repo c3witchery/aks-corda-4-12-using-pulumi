@@ -1,0 +1,265 @@
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: issuer-node-certificate-pvc
+  namespace: corda
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 1Gi
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: issuer-node-config-pvc
+  namespace: corda
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 1Gi
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: issuer-node-persistence-pvc
+  namespace: corda
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 30Gi
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: issuer-node-log-pvc
+  namespace: corda
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 5Gi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: issuer-node
+  namespace: corda
+spec:
+  selector:
+    matchLabels:
+      run: issuer-node
+  strategy:
+    type: Recreate
+  template:
+    metadata:
+      labels:
+        run: centralbank-node
+    spec:
+      containers:
+        - env:
+            - name: CORDA_ARGS
+              value: --log-to-console
+            - name: JVM_ARGS
+              value: -Xmx4096m -XX:MaxHeapFreeRatio=40
+          image: us-central1-docker.pkg.dev/r3-ps-test-01/private-docker-repo/corda/corda-enterprise:4.12-zulu-openjdk-alpine
+          imagePullPolicy: IfNotPresent
+          name: corda-node
+          ports:
+            - containerPort: 10200
+              name: p2pport
+            - containerPort: 10201
+              name: rpcport
+            - containerPort: 5000
+              name: debugport
+          resources:
+            limits:
+              memory: 8Gi
+              cpu: '1'
+            requests:
+              memory: 4Gi
+              cpu: 100m
+          volumeMounts:
+            - mountPath: /etc/corda
+              name: issuer-config-storage
+            - mountPath: /opt/corda/certificates
+              name: issuer-certificates-storage
+            - mountPath: /opt/corda/persistence
+              name: issuer-persistence-storage
+              subPath: persistence
+            - mountPath: /opt/corda/artemis
+              name: issuer-persistence-storage
+              subPath: artemis
+            - mountPath: /opt/corda/logs
+              name: issuer-logs-storage
+      imagePullSecrets:
+        - name: artifactory-secret
+      initContainers:
+        - args:
+            - -Rv
+            - 1000:1000
+            - /opt/corda/certificates
+            - /etc/corda
+            - /opt/corda/persistence
+            - /opt/corda/logs
+            - /opt/corda/artemis
+          command:
+            - chown
+          image: busybox:latest
+          imagePullPolicy: IfNotPresent
+          name: chown-certificates
+          resources:
+            limits:
+              memory: 1024Mi
+              cpu: 500m
+            requests:
+              memory: 256Mi
+              cpu: 100m
+          volumeMounts:
+            - mountPath: /etc/corda
+              name: issuer-config-storage
+            - mountPath: /opt/corda/certificates
+              name: issuer-certificates-storage
+            - mountPath: /opt/corda/persistence
+              name: issuer-persistence-storage
+              subPath: persistence
+            - mountPath: /opt/corda/artemis
+              name: issuer-persistence-storage
+              subPath: artemis
+            - mountPath: /opt/corda/logs
+              name: issuer-logs-storage
+        - args:
+            - -o
+            - /opt/corda/certificates/network-root-truststore.jks
+            - http://networkservices:8080/trustStore
+          command:
+            - curl
+          image: curlimages/curl:latest
+          imagePullPolicy: IfNotPresent
+          name: download-truststore
+          resources:
+            limits:
+              memory: 1024Mi
+              cpu: 500m
+            requests:
+              memory: 256Mi
+              cpu: 100m
+          securityContext:
+            runAsGroup: 1000
+            runAsUser: 1000
+          volumeMounts:
+            - mountPath: /etc/corda
+              name: issuer-config-storage
+            - mountPath: /opt/corda/certificates
+              name: issuer-certificates-storage
+            - mountPath: /opt/corda/persistence
+              name: issuer-persistence-storage
+              subPath: persistence
+            - mountPath: /opt/corda/artemis
+              name: issuer-persistence-storage
+              subPath: artemis
+            - mountPath: /opt/corda/logs
+              name: issuer-logs-storage
+        - args:
+            - --generic
+            - --exit-on-generate
+          command:
+            - config-generator
+          env:
+            - name: MY_LEGAL_NAME
+              value: O=Issuer,L=London,C=UK
+            - name: MY_PUBLIC_ADDRESS
+              value: centralbank-node
+            - name: NETWORKMAP_URL
+              value: http://networkservices:8080
+            - name: DOORMAN_URL
+              value: http://networkservices:8080
+            - name: NETWORK_TRUST_PASSWORD
+              value: trustpass
+            - name: MY_EMAIL_ADDRESS
+              value: cesare.urso@google.com
+            - name: RPC_PASSWORD
+              value: test
+            - name: MY_RPC_PORT
+              value: '10201'
+            - name: SSHPORT
+              value: '2222'
+            - name: RPC_USER
+              value: rpcUser
+          image: "us-central1-docker.pkg.dev/r3-ps-test-01/private-docker-repo/corda/corda-enterprise:4.12-zulu-openjdk-alpine"
+          imagePullPolicy: IfNotPresent
+          name: initial-registration
+          resources:
+            limits:
+              memory: 3584Mi
+              cpu: 500m
+            requests:
+              memory: 512Mi
+              cpu: 100m
+          securityContext:
+            runAsGroup: 1000
+            runAsUser: 1000
+          volumeMounts:
+            - mountPath: /etc/corda
+              name: issuer-config-storage
+            - mountPath: /opt/corda/certificates
+              name: issuer-certificates-storage
+            - mountPath: /opt/corda/persistence
+              name: issuer-persistence-storage
+              subPath: persistence
+            - mountPath: /opt/corda/artemis
+              name: issuer-persistence-storage
+              subPath: artemis
+            - mountPath: /opt/corda/logs
+              name: issuer-logs-storage
+        - args:
+            - run-dbmigration.sh
+          command:
+            - bash
+          image: "us-central1-docker.pkg.dev/r3-ps-test-01/private-docker-repo/corda/corda-enterprise:4.12-zulu-openjdk-alpine"
+          imagePullPolicy: IfNotPresent
+          name: run-migration
+          resources:
+            limits:
+              memory: 3584Mi
+              cpu: 500m
+            requests:
+              memory: 512Mi
+              cpu: 100m
+          securityContext:
+            runAsGroup: 1000
+            runAsUser: 1000
+          volumeMounts:
+            - mountPath: /etc/corda
+              name: issuer-config-storage
+            - mountPath: /opt/corda/certificates
+              name: issuer-certificates-storage
+            - mountPath: /opt/corda/persistence
+              name: issuer-persistence-storage
+              subPath: persistence
+            - mountPath: /opt/corda/artemis
+              name: issuer-persistence-storage
+              subPath: artemis
+            - mountPath: /opt/corda/logs
+              name: issuer-logs-storage
+      securityContext:
+        fsGroup: 1000
+      volumes:
+        - name: issuer-config-storage
+          persistentVolumeClaim:
+            claimName: issuer-node-config-pvc
+        - name: issuer-certificates-storage
+          persistentVolumeClaim:
+            claimName: issuer-node-certificate-pvc
+        - name: issuer-persistence-storage
+          persistentVolumeClaim:
+            claimName: issuer-node-persistence-pvc
+        - name: issuer-logs-storage
+          persistentVolumeClaim:
+            claimName: issuer-node-log-pvc

@@ -6,6 +6,10 @@ import (
 
 	"github.com/pulumi/pulumi-command/sdk/go/command/local"
 	"github.com/pulumi/pulumi-kubernetes/sdk/v4/go/kubernetes"
+
+	v1 "github.com/pulumi/pulumi-kubernetes/sdk/v4/go/kubernetes/core/v1"
+	metaV1 "github.com/pulumi/pulumi-kubernetes/sdk/v4/go/kubernetes/meta/v1"
+
 	"github.com/pulumi/pulumi/sdk/v3/go/pulumi"
 )
 
@@ -15,6 +19,7 @@ func main() {
 		subcriptionId := "af4f0732-dd8c-4330-a357-b9593255c3f0"
 		kubeconfigPath := os.Getenv("KUBECONFIGPATH")
 		resourceGroupName := "grow-dev-cesare"
+		myNamespace := "corda"
 
 		//az login
 		loginIntoAzCliResourceName := "loginIntoAzCli"
@@ -40,11 +45,11 @@ func main() {
 			ctx.Log.Warn(fmt.Sprintf("Resource with name %s already exists", loginIntoAzCliResourceName), nil)
 		}
 
+		//Retrieves the Kubeconfig for the above AKS Cluster
 		kubeconfig, err := os.ReadFile(kubeconfigPath)
 		if err != nil {
 			return fmt.Errorf("error whilst retrieving the local kubeconfig: %v", err)
 		}
-		//Retrieves the Kubeconfig for the above AKS Cluster
 		k8sProvider, err := kubernetes.NewProvider(ctx, "aksK8sProvider", &kubernetes.ProviderArgs{
 			Kubeconfig: pulumi.String(kubeconfig),
 		})
@@ -52,6 +57,47 @@ func main() {
 			return fmt.Errorf("error whilst getting an existing kubeconfig file: %v", err)
 		}
 		ctx.Export("aksK8sProvider", k8sProvider.ID())
+
+		//Create Corda Namespace
+		cordaNamespace, err := v1.NewNamespace(ctx, "cordaNamespace", &v1.NamespaceArgs{
+			Metadata: &metaV1.ObjectMetaArgs{
+				Name: pulumi.String(myNamespace),
+			},
+		}, pulumi.Provider(k8sProvider))
+		if err != nil {
+			return err
+		}
+		ctx.Export("cordaNamespace", cordaNamespace.ID())
+
+		// Initialize the Kubernetes Provider
+		provider := NewProvider(ctx, k8sProvider, myNamespace)
+
+		////////////////////////////
+		// CORDA NODE /////////////
+		///////////////////////////
+		//Sucks into the Corda Network Kubernetes  configmap for the node
+		nodeConfigMap, err := provider.CreateConfigMap("node-configmap", "resources/provider/node.conf")
+		if err != nil {
+			return fmt.Errorf("error  with the creation of the corda node configmap: %v", err)
+		}
+		ctx.Export("nodeConfigMap", nodeConfigMap.URN())
+
+		// Create Node Kubernetes PersistentVolumeClaims
+		nodePvcNames := []string{"node-certificates-pvc", "node-config-pvc", "node-persistence-pvc", "node-logs-pvc", "node-configmap-pvc"}
+		for _, pvcName := range nodePvcNames {
+			_, err := provider.CreatePVC(pvcName)
+			if err != nil {
+				return err
+			}
+		}
+		//ctx.Export("nodePvcNamesString", pulumi.String(strings.Join(nodePvcNames, " ")))
+
+		// Create the Corda Node (Provider) Deployment
+		nodeDeployment, err := provider.CreateDeployment("node", nodeConfigMap, nodePvcNames, "")
+		if err != nil {
+			return fmt.Errorf("error  with the creation of the corda node deployment: %v", err)
+		}
+		ctx.Export("nodeDeployment", nodeDeployment.ID())
 
 		return nil
 	})

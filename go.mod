@@ -10,7 +10,19 @@ require (
 	github.com/pulumi/pulumi/sdk/v3 v3.127.0
 )
 
-require github.com/BurntSushi/toml v1.2.1 // indirect
+require (
+	github.com/BurntSushi/toml v1.2.1 // indirect
+	github.com/gofrs/flock v0.7.1 // indirect
+	github.com/golang/protobuf v1.5.4 // indirect
+	github.com/mitchellh/go-homedir v1.1.0 // indirect
+	github.com/pulumi/pulumi/sdk v0.0.0-20200324171821-8ce10e1dfe54 // indirect
+	github.com/src-d/gcfg v1.4.0 // indirect
+	gopkg.in/src-d/go-billy.v4 v4.3.2 // indirect
+	gopkg.in/src-d/go-git.v4 v4.13.1 // indirect
+	gopkg.in/yaml.v2 v2.4.0 // indirect
+	k8s.io/klog v1.0.0 // indirect
+	sourcegraph.com/sourcegraph/appdash v0.0.0-20190731080439-ebfcffb1b5c0 // indirect
+)
 
 require (
 	dario.cat/mergo v1.0.0 // indirect
@@ -65,6 +77,7 @@ require (
 	github.com/pulumi/esc v0.9.1 // indirect
 	github.com/pulumi/pulumi-azure-native-sdk/v2 v2.42.1 // indirect
 	github.com/pulumi/pulumi-command/sdk v1.0.1
+	github.com/pulumi/pulumi-kubernetes v1.6.0
 	github.com/pulumi/pulumi-kubernetes/sdk/v4 v4.17.1
 	github.com/rivo/uniseg v0.4.4 // indirect
 	github.com/rogpeppe/go-internal v1.12.0 // indirect
