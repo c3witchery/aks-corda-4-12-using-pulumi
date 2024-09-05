@@ -76,24 +76,28 @@ func main() {
 		// CORDA NODE /////////////
 		///////////////////////////
 		//Sucks into the Corda Network Kubernetes  configmap for the node
-		nodeConfigMap, err := provider.CreateConfigMap("node-configmap", "resources/provider/node.conf")
+		nodeconfConfigMap, err := provider.CreateNodeconfConfigMap("node-configmap", "resources/provider/node.conf")
 		if err != nil {
 			return fmt.Errorf("error  with the creation of the corda node configmap: %v", err)
 		}
-		ctx.Export("nodeConfigMap", nodeConfigMap.URN())
+		ctx.Export("nodeConfigMap", nodeconfConfigMap.URN())
 
 		// Create Node Kubernetes PersistentVolumeClaims
-		nodePvcNames := []string{"node-certificates-pvc", "node-config-pvc", "node-persistence-pvc", "node-logs-pvc", "node-configmap-pvc"}
+		nodePvcNames := []string{"node-certificates-pvc", "node-config-pvc", "node-persistence-pvc", "node-logs-pvc", "node-configmap-pvc", "node-networkcertificate-configmap-pvc"}
 		for _, pvcName := range nodePvcNames {
 			_, err := provider.CreatePVC(pvcName)
 			if err != nil {
 				return err
 			}
 		}
-		//ctx.Export("nodePvcNamesString", pulumi.String(strings.Join(nodePvcNames, " ")))
 
 		// Create the Corda Node (Provider) Deployment
-		nodeDeployment, err := provider.CreateDeployment("node", nodeConfigMap, nodePvcNames, "")
+		GetNetworkcertificate()
+		networkcertificateConfigMap, err := provider.CreateNetworkcertificateConfigMap()
+		if err != nil {
+			return fmt.Errorf("error with the creation of the network certificate to connect to an existing CENM instace: %v", err)
+		}
+		nodeDeployment, err := provider.CreateDeployment("node", nodeconfConfigMap, networkcertificateConfigMap, nodePvcNames)
 		if err != nil {
 			return fmt.Errorf("error  with the creation of the corda node deployment: %v", err)
 		}

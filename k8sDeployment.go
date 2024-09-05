@@ -1,8 +1,11 @@
 package main
 
 import (
+	"encoding/base64"
 	"fmt"
+	"log"
 	"os"
+	"os/exec"
 
 	"github.com/pulumi/pulumi-kubernetes/sdk/v4/go/kubernetes"
 	appsV1 "github.com/pulumi/pulumi-kubernetes/sdk/v4/go/kubernetes/apps/v1"
@@ -48,7 +51,7 @@ func (p *Provider) CreatePVC(pvcName string) (*v1.PersistentVolumeClaim, error) 
 	return pvc, nil
 }
 
-func (p *Provider) CreateConfigMap(configName, filePath string) (*v1.ConfigMap, error) {
+func (p *Provider) CreateNodeconfConfigMap(configName, filePath string) (*v1.ConfigMap, error) {
 	configData, err := os.ReadFile(filePath)
 	if err != nil {
 		return nil, fmt.Errorf("error reading config file %s: %v", filePath, err)
@@ -64,12 +67,50 @@ func (p *Provider) CreateConfigMap(configName, filePath string) (*v1.ConfigMap, 
 		},
 	}, pulumi.Provider(p.k8sProvider))
 	if err != nil {
-		return nil, fmt.Errorf("error creating config map %s: %v", configName, err)
+		return nil, fmt.Errorf("error creating node conf configmap %s: %v", configName, err)
 	}
 	return configMap, nil
 }
 
-func (p *Provider) CreateDeployment(deploymentName string, configMap *v1.ConfigMap, pvcNames []string, initializeCommand string) (*appsV1.Deployment, error) {
+func GetSignerPodNameAsString() string {
+	cmd := exec.Command("sh", "-c", "kubectl get pods --namespace cenm --no-headers -o custom-columns=':metadata.name' | grep '^cenm-signer'")
+	output, err := cmd.Output()
+	if err != nil {
+		log.Fatalf("Failed to get signer pod name: %v", err)
+	}
+	return string(output)
+}
+
+func GetNetworkcertificate() {
+	mySigner := "cenm/" + GetSignerPodNameAsString() + ":DATA/trust-stores/network-root-truststore.jks"
+	_ = exec.Command("kubectl", "cp", mySigner, "network-root-truststore.jks")
+
+}
+
+func (p *Provider) CreateNetworkcertificateConfigMap() (*v1.ConfigMap, error) {
+
+	networkConfigData, err := os.ReadFile("network-root-truststore.jks")
+	if err != nil {
+		return nil, fmt.Errorf("error reading config file %s: %v", "network-root-truststore.jks", err)
+	}
+	configMap, err := v1.NewConfigMap(p.ctx, "networkcertificate-configmap", &v1.ConfigMapArgs{
+		Metadata: &metaV1.ObjectMetaArgs{
+			Name:      pulumi.String("networkcertificate-configmap"),
+			Namespace: pulumi.String(p.namespace),
+		},
+		Data: pulumi.StringMap{
+			"network-root-truststore.jks": pulumi.String(string(base64.StdEncoding.EncodeToString(networkConfigData))),
+		},
+	}, pulumi.Provider(p.k8sProvider))
+	if err != nil {
+		return nil, fmt.Errorf("error creating config map %s: %v", "networkcertificate-configmap", err)
+	}
+	return configMap, nil
+}
+
+//kubectl get svc idman-ip notary-ip
+
+func (p *Provider) CreateDeployment(deploymentName string, nodeconfConfigMap *v1.ConfigMap, networkcertificateConfigMap *v1.ConfigMap, pvcNames []string) (*appsV1.Deployment, error) {
 	volumes := v1.VolumeArray{
 		&v1.VolumeArgs{
 			Name: pulumi.String(pvcNames[0]),
@@ -98,7 +139,13 @@ func (p *Provider) CreateDeployment(deploymentName string, configMap *v1.ConfigM
 		&v1.VolumeArgs{
 			Name: pulumi.String(pvcNames[4]),
 			ConfigMap: &v1.ConfigMapVolumeSourceArgs{
-				Name: configMap.Metadata.Name(),
+				Name: nodeconfConfigMap.Metadata.Name(),
+			},
+		},
+		&v1.VolumeArgs{
+			Name: pulumi.String(pvcNames[5]),
+			ConfigMap: &v1.ConfigMapVolumeSourceArgs{
+				Name: networkcertificateConfigMap.Metadata.Name(),
 			},
 		},
 	}
@@ -180,12 +227,17 @@ func (p *Provider) CreateDeployment(deploymentName string, configMap *v1.ConfigM
 									Name:      pulumi.String(deploymentName + "-configmap-pvc"),
 									MountPath: pulumi.String("/opt/corda/config"),
 								},
+								&v1.VolumeMountArgs{
+									Name:      pulumi.String(deploymentName + "-networkcertificate-configmap-pvc"),
+									MountPath: pulumi.String("/opt/corda/certificates/network"),
+									SubPath:   pulumi.String("network-root-truststore.jks"),
+								},
 							},
 
 							Env: v1.EnvVarArray{
 								&v1.EnvVarArgs{
 									Name:  pulumi.String("CORDA_ARGS"),
-									Value: pulumi.String("--log-to-console" + initializeCommand),
+									Value: pulumi.String("--log-to-console --initial-registration --network-root-truststore-password trust-store-password"),
 								},
 								&v1.EnvVarArgs{
 									Name:  pulumi.String("ACCEPT_LICENSE"),
@@ -194,6 +246,10 @@ func (p *Provider) CreateDeployment(deploymentName string, configMap *v1.ConfigM
 								&v1.EnvVarArgs{
 									Name:  pulumi.String("CONFIG_FOLDER"),
 									Value: pulumi.String("/opt/corda/config"),
+								},
+								&v1.EnvVarArgs{
+									Name:  pulumi.String("CERTIFICATES_FOLDER"),
+									Value: pulumi.String("/opt/corda/certificates/network"),
 								},
 							},
 						},
