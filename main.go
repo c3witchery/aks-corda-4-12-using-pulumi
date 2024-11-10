@@ -16,9 +16,9 @@ import (
 func main() {
 	pulumi.Run(func(ctx *pulumi.Context) error {
 
-		subcriptionId := "af4f0732-dd8c-4330-a357-b9593255c3f0"
+		subcriptionId := ""
 		kubeconfigPath := os.Getenv("KUBECONFIGPATH")
-		resourceGroupName := "grow-dev-cesare"
+		resourceGroupName := "cesare-dev"
 		myNamespace := "corda"
 
 		//az login
